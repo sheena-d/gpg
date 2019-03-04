@@ -1156,7 +1156,7 @@ class Gpg
     /**
      * Cypher a given file using a given public key, identified by its fingerprint.
      * @param string $inInputPath Path to the input file to cypher.
-     * @param string $inPublicKeyFingerPrint Fingerprint of the public key to use.
+     * @param string|array $inPublicKeyFingerPrint Fingerprint or name of the public key to use. String for single or array for multiple
      * @param null|string $inOptOutputFile Path the the file used to store the generated signature.
      * @return true|string Upon successful completion:
      *         If a destination file has been specified, then the method returns the value true.
@@ -1184,10 +1184,18 @@ class Gpg
             '--always-trust',
             '--armor',
             '--encrypt',
-            '--recipient',
-            escapeshellarg($inPublicKeyFingerPrint),
-            escapeshellarg($inInputPath)
         );
+        if(is_array($inPublicKeyFingerPrint)) {
+            foreach($inPublicKeyFingerPrint as $recipient) {
+                $cmd[] = '--recipient';
+                $cmd[] = escapeshellarg($recipient);
+            }
+        }
+        else {
+            $cmd[] = '--recipient';
+            $cmd[] = escapeshellarg($inPublicKeyFingerPrint);
+        }
+        $cmd[] = escapeshellarg($inInputPath);
 
         $result = self::__exec($cmd, $inOptOutputFile, null);
         $status = $result[self::KEY_COMMAND_RETURN_CODE];
@@ -1208,7 +1216,7 @@ class Gpg
     /**
      * Cypher a given string using a given public key, identified by its fingerprint.
      * @param string $inString String to cypher.
-     * @param string $inPublicKeyFingerPrint Fingerprint of the public key to use.
+     * @param string|array $inPublicKeyFingerPrint Fingerprint or name of the public key to use. String for single or array for multiple
      * @param null|string $inOptOutputFile Path the the file used to store the generated signature.
      * @return true|string If an output file has been specified, then the method returns the value true.
      *         Otherwise, the method returns the encrypted string.
@@ -1479,15 +1487,15 @@ class Gpg
         }
 
         $cmd = array_merge($cmd, $inCliArguments, array(
-            '2>&1',
-            ';',
-            'echo',
-            '$?',
-            '>',
-            escapeshellarg($tempCommandStatusCode),
-            ';',
-            'exec',
-            '3>&-')
+                '2>&1',
+                ';',
+                'echo',
+                '$?',
+                '>',
+                escapeshellarg($tempCommandStatusCode),
+                ';',
+                'exec',
+                '3>&-')
         );
 
         $output = array();
@@ -1533,13 +1541,12 @@ class Gpg
         );
     }
 
-    private function __unlink($inPath) {
+    private static function __unlink($inPath) {
         if (file_exists($inPath)) {
             if (false === unlink($inPath)) {
                 throw new \Exception("Can not delete the file <$inPath>");
             }
         }
     }
-
 
 }
