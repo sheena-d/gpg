@@ -494,7 +494,6 @@ class Gpg
      * @throws \Exception
      */
     static public function importPrivateKey($inPrivateKeyPath) {
-
         if (! file_exists($inPrivateKeyPath)) {
             throw new \Exception("File \"$inPrivateKeyPath\" does not exist.");
         }
@@ -982,6 +981,7 @@ class Gpg
      */
     static public function detachSignFile($inAbsolutePath, $inPrivateKeyFingerPrint, $inOptPassword=null, $inOptSignaturePath=null)
     {
+
         $inAbsolutePath = realpath($inAbsolutePath);
         $inOptSignaturePath = is_null($inOptSignaturePath) ? null : $inOptSignaturePath;
 
@@ -996,6 +996,7 @@ class Gpg
             '--detach-sign',
             escapeshellarg($inAbsolutePath)
         );
+
 
         $result = self::__exec($cmd, $inOptSignaturePath, $inOptPassword);
         $statusText = explode(PHP_EOL, $result[self::KEY_COMMAND_STATUS_FILE]);
@@ -1152,7 +1153,6 @@ class Gpg
 
         return $result;
     }
-
     /**
      * Cypher a given file using a given public key, identified by its fingerprint.
      * @param string $inInputPath Path to the input file to cypher.
@@ -1178,11 +1178,12 @@ class Gpg
      *
      * @throws \Exception
      */
-    static public function encryptAsymmetricFile($inInputPath, $inPublicKeyFingerPrint, $inOptOutputFile=null) {
+    static public function encryptAsymmetricFile($inInputPath, $inPublicKeyFingerPrint, $inOptPassword = null, $inOptOutputFile=null) {
 
         $cmd = array(
             '--always-trust',
             '--armor',
+            '--sign',
             '--encrypt',
         );
         if(is_array($inPublicKeyFingerPrint)) {
@@ -1197,7 +1198,71 @@ class Gpg
         }
         $cmd[] = escapeshellarg($inInputPath);
 
-        $result = self::__exec($cmd, $inOptOutputFile, null);
+        $result = self::__exec($cmd, $inOptOutputFile, $inOptPassword);
+        $status = $result[self::KEY_COMMAND_RETURN_CODE];
+
+        if (0 != $status) {
+            throw new \Exception("The command \"" . $result[self::KEY_COMMAND] . "\" failed. Execution status is $status.");
+        }
+
+        if (! is_null($inOptOutputFile)) {
+            // The result should be in the file which path is $inOptOutputFile.
+            return true;
+        }
+
+        // Return the result as a string.
+        return $result[self::KEY_COMMAND_OUTPUT];
+    }
+
+    /**
+     * Sign and Cypher a given file using a given public key, identified by its fingerprint.
+     * @param string $inInputPath Path to the input file to cypher.
+     * @param string|array $inPublicKeyFingerPrint Fingerprint or name of the public key to use. String for single or array for multiple
+     * @param string $inOptPassword Password associated to the private key.
+     *        If no password is required, then you should set the value of this parameter to null.
+     * @param null|string $inOptOutputFile Path the the file used to store the generated signature.
+     * @return true|string Upon successful completion:
+     *         If a destination file has been specified, then the method returns the value true.
+     *         Otherwise, the method returns a string that represents the encrypted file.
+     * @note Commands:
+     *       gpg --list-keys --fingerprint --with-colon
+     *       exec 3> /tmp/status; gpg --batch --yes --status-fd 3 --always-trust --armor --output encrypted_file --sign --encrypt --recipient 03DEC874738344206A1A7D31E07D9D14954C8DC5 file_to_sign.txt; echo $?; exec 3>&-
+     *       exec 3> /tmp/status; gpg --batch --yes --status-fd 3 --always-trust --armor --output - --sign --encrypt --recipient 03DEC874738344206A1A7D31E07D9D14954C8DC5 file_to_sign.txt; echo $?; exec 3>&-
+     *       SUCCESS: /tmp/status contains:
+     *                [GNUPG:] BEGIN_ENCRYPTION 2 9
+     *                [GNUPG:] END_ENCRYPTION
+     *                And the status returned by the command is 0.
+     *       ERROR:   /tmp/status may be empty, ot it may contain lines. For example:
+     *                [GNUPG:] INV_RECP 0 03DEC874738344206A1A7D31E07D9D14954C8DC
+     *                And the status returned by the command is not 0.
+     *
+     *       => To decide whether the command was successful or not, we look at the status returned by the command.
+     *          On success, its value should be 0.
+     *
+     * @throws \Exception
+     */
+    static public function signEncryptAsymmetricFile($inInputPath, $inPublicKeyFingerPrint, $inOptPassword = null, $inOptOutputFile=null) {
+
+        $cmd = array(
+            '--always-trust',
+            '--armor',
+            '--sign',
+            '--encrypt',
+            '--no-batch'
+        );
+        if(is_array($inPublicKeyFingerPrint)) {
+            foreach($inPublicKeyFingerPrint as $recipient) {
+                $cmd[] = '--recipient';
+                $cmd[] = escapeshellarg($recipient);
+            }
+        }
+        else {
+            $cmd[] = '--recipient';
+            $cmd[] = escapeshellarg($inPublicKeyFingerPrint);
+        }
+        $cmd[] = escapeshellarg($inInputPath);
+
+        $result = self::__exec($cmd, $inOptOutputFile, $inOptPassword);
         $status = $result[self::KEY_COMMAND_RETURN_CODE];
 
         if (0 != $status) {
@@ -1502,7 +1567,7 @@ class Gpg
         $status = null; // This value is not interesting.
         $cmd = implode(' ', $cmd);
 
-        // print "\n$cmd\n"; flush();
+        //print "\n$cmd\n"; flush();
 
         exec($cmd, $output, $status);
 
